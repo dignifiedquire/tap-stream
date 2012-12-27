@@ -1,8 +1,8 @@
 {
-  "name": "{{example}}",
+  "name": "tap-stream",
   "version": "0.1.0",
-  "description": "{{example}}",
-  "author": "{{author}}",
+  "description": "",
+  "author": "Friedel Ziegelmayer",
   "main": "index",
   "dependencies": {
     "mapping-stream": "~0.1.0",
@@ -16,7 +16,8 @@
     "browserify-server": "~2.1.4",
     "wr": "~1.2.1",
     "live-reload": "~0.2.0",
-    "ecstatic": "~0.3.0"
+    "ecstatic": "~0.3.0",
+    "jquery-browserify": "~1.8.1"
   },
   "scripts": {
     "build": "make all"

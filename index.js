@@ -1,15 +1,10 @@
-var mapping = require("mapping-stream")
-
-    , engine = require("../../index")
-
-    , body = document.body
-    , stream = engine("/invert")
-
-
+var mapping = require("mapping-stream");
+var engine = require("engine.io-stream");
 var $ = require('jquery-browserify');
 var MuxDemux = require('mux-demux');
 var TapProducer = require('./node_modules/tap/lib/tap-producer.js');
 
+var stream = engine("/invert");
 var tp = new TapProducer();
 
 var mdm = MuxDemux();
@@ -41,14 +36,3 @@ setInterval(function() {
     ok: true
   });
 }, 1e3);
-
-// var tapStream = client.createReadStream('tap');
-
-// var tapStream = mdm.createReadStream('tap');
-// tapStream
-//     .pipe(mapping(function (chunk) {
-//         append(body, String(chunk))
-// 
-//     })).pipe(tapStream)
-
-
