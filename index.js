@@ -36,3 +36,8 @@ setInterval(function() {
     ok: true
   });
 }, 1e3);
+
+// Disconnects
+stream.on('closed', function(reason, description) {
+  console.log('Disconnect!', reason, description);
+});
