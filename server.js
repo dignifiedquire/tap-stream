@@ -4,7 +4,7 @@ var ecstatic = require('ecstatic');
 var MuxDemux = require('mux-demux');
 var TapConsumer = require('tap').Consumer;
 var EngineServer = require('engine.io-stream/server');
-var rpc = require('rpc-stream');
+var mapping = require('mapping-stream');
 
 var staticHandler = ecstatic(path.join(__dirname, 'static'));
 var server = http.createServer(staticHandler);
@@ -18,9 +18,10 @@ console.log('Listening on port 8080');
 var mapping = require('mapping-stream');
 
 var tc = new TapConsumer();
+var mdm = MuxDemux(); 
 
 function onConnection(stream) {
-    var mdm = MuxDemux(); 
+    
     stream.pipe(mdm).pipe(stream);
     var tapStream = mdm.createStream('tap');
     // tapStream.pipe(tc);
@@ -29,14 +30,8 @@ function onConnection(stream) {
     // });
     //tapStream.pipe(process.stdout, {end:false});
     var testacularStream = mdm.createStream('testacular');
-    var rpcStream = mdm.createStream('rpc');
-    rpcFunctions = rpc({
-      log: function(args, callback) {
-        console.log.apply(console, args);
-        callback();
-      }
-    });
-    rpcStream.pipe(rpcFunctions).rpcStream;
+    var consoleStream = mdm.createReadStream('console');
+
     var iv = setInterval(function () {
         testacularStream.write(String(Math.floor(Math.random() * 4)));
     }, 1e3)
@@ -44,6 +39,9 @@ function onConnection(stream) {
     stream.once('end', function () {
         clearInterval(iv)
     })
-
-    stream.pipe(process.stdout, { end : false })
+    consoleStream.pipe(mapping(function(chunk) {
+      console.log.apply(null, chunk);
+    }))
+    tapStream.pipe(process.stdout, {end: false});    
+    // stream.pipe(process.stdout, { end : false });
 }
