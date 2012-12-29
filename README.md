@@ -7,6 +7,10 @@ Creates three different streams
 * *console* stream: for `console.log` calls
 * *testacular* stream: misc communication
 
+These streams get multiplexed into one and then send via the [engine.io] connection 
+to the browser. There they demultiplexed and are used for their different purposes.
+(This connection goes both ways of course)
+
 ## Used Modules
 
 * [engine.io-stream]: Streaming interface for [engine.io]
