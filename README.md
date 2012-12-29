@@ -45,4 +45,4 @@ $ node server.js
 [mux-demux]: https://github.com/dominictarr/mux-demux
 [tap]: https://github.com/isaacs/node-tap
 [browserify]: https://github.com/substack/node-browserify
-[mux-demux]: https://github.com/dominictarr/reconnect
+[reconnect]: https://github.com/dominictarr/reconnect
