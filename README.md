@@ -32,8 +32,13 @@ $ node server.js
 # now open http://localhost:8080 in your browser
 ```
 
+## Todo
+
+* Use [reconnect] for automatic reconnects
+
 [engine.io]: https://github.com/LearnBoost/engine.io
 [engine.io-stream]: https://github.com/Raynos/engine.io-stream
 [mux-demux]: https://github.com/dominictarr/mux-demux
 [tap]: https://github.com/isaacs/node-tap
 [browserify]: https://github.com/substack/node-browserify
+[mux-demux]: https://github.com/dominictarr/reconnect
