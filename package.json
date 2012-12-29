@@ -13,11 +13,11 @@
     "reconnect": "~0.3.1"
   },
   "devDependencies": {
-    "browserify-server": "~2.1.4",
-    "wr": "~1.2.1",
-    "live-reload": "~0.2.0",
     "ecstatic": "~0.3.0",
-    "jquery-browserify": "~1.8.1"
+    "jquery-browserify": "~1.8.1",
+    "grunt": "~0.4.0rc2",
+    "grunt-browserify": "https://github.com/Aratramba/grunt-browserify/tarball/master",
+    "grunt-contrib-watch": "~0.1.4"
   },
   "scripts": {
     "build": "make all"

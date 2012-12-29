@@ -4,7 +4,7 @@ var $ = require('jquery-browserify');
 var MuxDemux = require('mux-demux');
 var TapProducer = require('tap/lib/tap-producer');
 
-var stream = engine('/invert');
+//var stream = engine('/invert');
 
 // tap-producer to generate a stream of tap compliant data
 var tp = new TapProducer();
@@ -13,7 +13,7 @@ var tp = new TapProducer();
 var mdm = MuxDemux();
 
 
-// Replace console.log with a remote call
+// Replace console.log
 var streamConsole = function(_stream) {
   var console = global.console = global.console || {log: function() {}};
   var browserConsoleLog = console.log;
@@ -46,7 +46,7 @@ mdm.on('connection', function(_stream) {
       break;
     case 'console':
       streamConsole(_stream);
-      console.log('streaming console.log')
+      console.log('streaming console.log');
       break;
   }
 });
