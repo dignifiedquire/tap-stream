@@ -4571,6 +4571,18 @@ exports.on = function (element, event, fn, capture) {
   }
 };
 
+
+
+/**
+ * Returns the global object
+ *
+ * @api private
+ */
+
+exports.global = function () {
+  return 'undefined' != typeof window ? window : global;
+};
+
 /**
  * Load utility.
  *
@@ -4704,8 +4716,8 @@ exports.ua.ios6 = exports.ua.ios && /OS 6_/.test(navigator.userAgent);
 
 exports.request = function request (xdomain) {
   if ('undefined' == typeof window) {
-    var XMLHttpRequest = (require)('xmlhttprequest').XMLHttpRequest;
-    return new XMLHttpRequest();
+    var _XMLHttpRequest = (require)('xmlhttprequest').XMLHttpRequest;
+    return new _XMLHttpRequest();
   }
 
   if (xdomain && 'undefined' != typeof XDomainRequest && !exports.ua.hasCORS) {
@@ -4771,27 +4783,6 @@ exports.qs = function (obj) {
 
   return str;
 };
-
-/**
- * Returns the global object
- *
- * @api private
- */
-
-exports.global = function () {
-  return 'undefined' != typeof window ? window : global;
-};
-
-
-/**
- * Change the internal pageLoaded value.
- */
-
-if ('undefined' != typeof window) {
-  exports.load(function () {
-    pageLoaded = true;
-  });
-}
 
 });
 
@@ -6693,6 +6684,7 @@ function load (arr, fn) {
 });
 
 require.define("/node_modules/engine.io-stream/stream.js",function(require,module,exports,__dirname,__filename,process,global){var ReadWriteStream = require("read-write-stream")
+    , WriteStream = require("write-stream")
     , reemit = require("re-emitter/reemit")
 
 module.exports = EngineStream
@@ -6704,24 +6696,16 @@ function EngineStream(socket) {
     reemit(socket, stream, "error")
 
     socket.on("open", function () {
-        console.log('opening socket', socket);
         stream.emit("connect")
     })
 
     socket.on("close", function (reason, description) {
         queue.end()
-        console.log('closed', reason, description)
-        stream.emit("end", reason, description)
-        stream.writable = false
-        stream.readable = false
+        stream.emit("closed", reason, description)
+        // pipe all the data somewhere to ensure it ends
+        stream.pipe(WriteStream(noop))
     })
     socket.on("message", queue.push)
-
-    stream.destroy = function () {
-        stream._ended = true
-        stream.writable = stream.readable = false
-        end()
-    }
 
     return stream
 
@@ -6732,8 +6716,9 @@ function EngineStream(socket) {
     function end() {
         socket.close()
     }
-    
 }
+
+function noop() {}
 
 });
 
@@ -7666,6 +7651,77 @@ function extend(target) {
 
     return target
 }
+});
+
+require.define("/node_modules/engine.io-stream/node_modules/write-stream/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index"}
+});
+
+require.define("/node_modules/engine.io-stream/node_modules/write-stream/index.js",function(require,module,exports,__dirname,__filename,process,global){var Stream = require("stream")
+
+module.exports = WriteStream
+
+WriteStream.toArray = require("./array")
+
+function WriteStream(write, end) {
+    var stream = new Stream()
+        , ended = false
+
+    end = end || defaultEnd
+
+    stream.write = handleWrite
+    stream.end = handleEnd
+
+    // Support 0.8 pipe [LEGACY]
+    stream.writable = true
+
+    return stream
+
+    function handleWrite(chunk) {
+        var result = write.call(stream, chunk)
+        return result === false ? false : true
+    }
+
+    function handleEnd(chunk) {
+        if (ended) {
+            return
+        }
+
+        ended = true
+        if (arguments.length) {
+            stream.write(chunk)
+        }
+        end.call(stream)
+    }
+}
+
+function defaultEnd() {
+    this.emit("finish")
+}
+
+});
+
+require.define("/node_modules/engine.io-stream/node_modules/write-stream/array.js",function(require,module,exports,__dirname,__filename,process,global){var to = require("./index")
+
+module.exports = toArray
+
+function toArray(array, end) {
+    if (typeof array === "function") {
+        end = array
+        array = []
+    }
+
+    return to(writeArray, endArray)
+
+    function writeArray(chunk) {
+        array.push(chunk)
+    }
+
+    function endArray() {
+        end(array)
+        this.emit("end")
+    }
+}
+
 });
 
 require.define("/node_modules/engine.io-stream/node_modules/re-emitter/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index"}
@@ -18092,6 +18148,490 @@ console.error([num, encNum, decEncNum])
 
 });
 
+require.define("/node_modules/reconnect/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"browserify":"./shoe"}
+});
+
+require.define("/node_modules/reconnect/inject.js",function(require,module,exports,__dirname,__filename,process,global){var EventEmitter = require('events').EventEmitter
+var backoff = require('backoff')
+
+module.exports =
+function (createConnection) {
+  return function (opts, onConnect) {
+    onConnect = 'function' == typeof opts ? opts : onConnect
+    opts = opts || {initialDelay: 1e3, maxDelay: 30e3}
+    if(!onConnect)
+      onConnect = opts.onConnect
+
+    var emitter = new EventEmitter()
+    emitter.connected = false
+    emitter.reconnect = true
+
+    if(onConnect)
+      emitter.on('connect', onConnect)
+
+    var backoffMethod = (backoff[opts.type] || backoff.fibonacci) (opts)
+
+    backoffMethod.on('backoff', function (n, d) {
+      emitter.emit('backoff', n, d)
+    })
+
+    var args
+    function attempt (n, delay) {
+      if(!emitter.reconnect) return
+
+      emitter.emit('reconnect', n, delay)
+      var con = createConnection.apply(null, args)
+      emitter._connection = con
+      function onDisconnect () {
+
+        emitter.connected = false
+        con.removeListener('error', onDisconnect)
+        con.removeListener('close', onDisconnect)
+        con.removeListener('end'  , onDisconnect)
+
+        //emit disconnect before checking reconnect, so user has a chance to decide not to.
+        emitter.emit('disconnect', con)
+
+        if(!emitter.reconnect) return
+        backoffMethod.backoff()
+      }
+
+      con.on('connect', function () {
+        backoffMethod.reset()
+        emitter.connected = true
+        emitter.emit('connect', con)
+      }).on('error', onDisconnect)
+        .on('close', onDisconnect)
+        .on('end'  , onDisconnect)
+    }
+
+    emitter.connect =
+    emitter.listen = function () {
+      this.reconnect = true
+      if(emitter.connected) return
+      backoffMethod.reset()
+      backoffMethod.on('ready', attempt)
+      args = [].slice.call(arguments)
+      attempt(0, 0)
+      return emitter
+    }
+
+    //force reconnection
+    emitter.reconnect = function () {
+      if(this.connected)
+        return emitter.disconnect()
+      
+      backoffMethod.reset()
+      attempt(0, 0)
+      return emitter
+    }
+
+    emitter.disconnect = function () {
+      this.reconnect = false
+      if(!emitter.connected) return emitter
+      
+      else if(emitter._connection)
+        emitter._connection.destroy()
+
+      emitter.emit('disconnect')
+      return emitter
+    }
+
+    var widget
+    emitter.widget = function () {
+      if(!widget)
+        widget = require('./widget')(emitter)
+      return widget
+    }
+
+    return emitter
+  }
+
+}
+
+});
+
+require.define("/node_modules/reconnect/node_modules/backoff/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
+});
+
+require.define("/node_modules/reconnect/node_modules/backoff/index.js",function(require,module,exports,__dirname,__filename,process,global){/*
+ * Copyright (c) 2012 Mathieu Turcotte
+ * Licensed under the MIT license.
+ */
+
+var Backoff = require('./lib/backoff'),
+    FibonacciBackoffStrategy = require('./lib/strategy/fibonacci'),
+    ExponentialBackoffStrategy = require('./lib/strategy/exponential');
+
+module.exports.Backoff = Backoff;
+module.exports.FibonacciStrategy = FibonacciBackoffStrategy;
+module.exports.ExponentialStrategy = ExponentialBackoffStrategy;
+
+/**
+ * Constructs a Fibonacci backoff.
+ * @param options Fibonacci backoff strategy arguments.
+ * @see FibonacciBackoffStrategy
+ */
+module.exports.fibonacci = function(options) {
+    return new Backoff(new FibonacciBackoffStrategy(options));
+};
+
+/**
+ * Constructs an exponential backoff.
+ * @param options Exponential strategy arguments.
+ * @see ExponentialBackoffStrategy
+ */
+module.exports.exponential = function(options) {
+    return new Backoff(new ExponentialBackoffStrategy(options));
+};
+
+
+});
+
+require.define("/node_modules/reconnect/node_modules/backoff/lib/backoff.js",function(require,module,exports,__dirname,__filename,process,global){/*
+ * Copyright (c) 2012 Mathieu Turcotte
+ * Licensed under the MIT license.
+ */
+
+var events = require('events'),
+    util = require('util');
+
+/**
+ * Backoff driver.
+ * @param backoffStrategy Backoff delay generator/strategy.
+ * @constructor
+ */
+function Backoff(backoffStrategy) {
+    events.EventEmitter.call(this);
+
+    this.backoffStrategy_ = backoffStrategy;
+    this.backoffNumber_ = 0;
+    this.backoffDelay_ = 0;
+    this.timeoutID_ = -1;
+
+    this.handlers = {
+        backoff: this.onBackoff_.bind(this)
+    };
+}
+util.inherits(Backoff, events.EventEmitter);
+
+/**
+ * Starts a backoff operation.
+ */
+Backoff.prototype.backoff = function() {
+    if (this.timeoutID_ !== -1) {
+        throw new Error('Backoff in progress.');
+    }
+
+    this.backoffDelay_ = this.backoffStrategy_.next();
+    this.timeoutID_ = setTimeout(this.handlers.backoff, this.backoffDelay_);
+    this.emit('backoff', this.backoffNumber_, this.backoffDelay_);
+};
+
+/**
+ * Backoff completion handler.
+ * @private
+ */
+Backoff.prototype.onBackoff_ = function() {
+    this.timeoutID_ = -1;
+    this.emit('ready', this.backoffNumber_++, this.backoffDelay_);
+};
+
+/**
+ * Stops any backoff operation and resets the backoff
+ * delay to its inital value.
+ */
+Backoff.prototype.reset = function() {
+    this.backoffNumber_ = 0;
+    this.backoffStrategy_.reset();
+    clearTimeout(this.timeoutID_);
+    this.timeoutID_ = -1;
+};
+
+module.exports = Backoff;
+
+
+});
+
+require.define("/node_modules/reconnect/node_modules/backoff/lib/strategy/fibonacci.js",function(require,module,exports,__dirname,__filename,process,global){/*
+ * Copyright (c) 2012 Mathieu Turcotte
+ * Licensed under the MIT license.
+ */
+
+var util = require('util');
+
+var BackoffStrategy = require('./strategy');
+
+/**
+ * Fibonacci backoff strategy.
+ * @extends BackoffStrategy
+ */
+function FibonacciBackoffStrategy(options) {
+    BackoffStrategy.call(this, options);
+    this.backoffDelay_ = 0;
+    this.nextBackoffDelay_ = this.getInitialDelay();
+}
+util.inherits(FibonacciBackoffStrategy, BackoffStrategy);
+
+/** @inheritDoc */
+FibonacciBackoffStrategy.prototype.next_ = function() {
+    var backoffDelay = Math.min(this.nextBackoffDelay_, this.getMaxDelay());
+    this.nextBackoffDelay_ += this.backoffDelay_;
+    this.backoffDelay_ = backoffDelay;
+    return backoffDelay;
+};
+
+/** @inheritDoc */
+FibonacciBackoffStrategy.prototype.reset_ = function() {
+    this.nextBackoffDelay_ = this.getInitialDelay();
+    this.backoffDelay_ = 0;
+};
+
+module.exports = FibonacciBackoffStrategy;
+
+
+});
+
+require.define("/node_modules/reconnect/node_modules/backoff/lib/strategy/strategy.js",function(require,module,exports,__dirname,__filename,process,global){/*
+ * Copyright (c) 2012 Mathieu Turcotte
+ * Licensed under the MIT license.
+ */
+
+var events = require('events'),
+    util = require('util');
+
+function isDef(value) {
+    return value !== undefined && value !== null;
+}
+
+/**
+ * Abstract class defining the skeleton for all backoff strategies.
+ * @param options Backoff strategy options.
+ * @param options.randomisationFactor The randomisation factor, must be between
+ * 0 and 1.
+ * @param options.initialDelay The backoff initial delay, in milliseconds.
+ * @param options.maxDelay The backoff maximal delay, in milliseconds.
+ * @constructor
+ */
+function BackoffStrategy(options) {
+    options = options || {};
+
+    if (isDef(options.initialDelay) && options.initialDelay < 1) {
+        throw new Error('The initial timeout must be greater than 0.');
+    } else if (isDef(options.maxDelay) && options.maxDelay < 1) {
+        throw new Error('The maximal timeout must be greater than 0.');
+    }
+
+    this.initialDelay_ = options.initialDelay || 100;
+    this.maxDelay_ = options.maxDelay || 10000;
+
+    if (this.maxDelay_ <= this.initialDelay_) {
+        throw new Error('The maximal backoff delay must be ' +
+                        'greater than the initial backoff delay.');
+    }
+
+    if (isDef(options.randomisationFactor) &&
+        (options.randomisationFactor < 0 || options.randomisationFactor > 1)) {
+        throw new Error('The randomisation factor must be between 0 and 1.');
+    }
+
+    this.randomisationFactor_ = options.randomisationFactor || 0;
+}
+
+/**
+ * Retrieves the maximal backoff delay.
+ * @return The maximal backoff delay.
+ */
+BackoffStrategy.prototype.getMaxDelay = function() {
+    return this.maxDelay_;
+};
+
+/**
+ * Retrieves the initial backoff delay.
+ * @return The initial backoff delay.
+ */
+BackoffStrategy.prototype.getInitialDelay = function() {
+    return this.initialDelay_;
+};
+
+/**
+ * Template method that computes the next backoff delay.
+ * @return The backoff delay, in milliseconds.
+ */
+BackoffStrategy.prototype.next = function() {
+    var backoffDelay = this.next_();
+    var randomisationMultiple = 1 + Math.random() * this.randomisationFactor_;
+    var randomizedDelay = Math.round(backoffDelay * randomisationMultiple);
+    return randomizedDelay;
+};
+
+/**
+ * Computes the next backoff delay.
+ * @return The backoff delay, in milliseconds.
+ */
+BackoffStrategy.prototype.next_ = function() {
+    throw new Error('BackoffStrategy.next_() unimplemented.');
+};
+
+/**
+ * Template method that resets the backoff delay to its initial value.
+ */
+BackoffStrategy.prototype.reset = function() {
+    this.reset_();
+};
+
+/**
+ * Resets the backoff delay to its initial value.
+ */
+BackoffStrategy.prototype.reset_ = function() {
+    throw new Error('BackoffStrategy.reset_() unimplemented.');
+};
+
+module.exports = BackoffStrategy;
+
+
+});
+
+require.define("/node_modules/reconnect/node_modules/backoff/lib/strategy/exponential.js",function(require,module,exports,__dirname,__filename,process,global){/*
+ * Copyright (c) 2012 Mathieu Turcotte
+ * Licensed under the MIT license.
+ */
+
+var util = require('util');
+
+var BackoffStrategy = require('./strategy');
+
+/**
+ * Exponential backoff strategy.
+ * @extends BackoffStrategy
+ */
+function ExponentialBackoffStrategy(options) {
+    BackoffStrategy.call(this, options);
+    this.backoffDelay_ = 0;
+    this.nextBackoffDelay_ = this.getInitialDelay();
+}
+util.inherits(ExponentialBackoffStrategy, BackoffStrategy);
+
+/** @inheritDoc */
+ExponentialBackoffStrategy.prototype.next_ = function() {
+    this.backoffDelay_ = Math.min(this.nextBackoffDelay_, this.getMaxDelay());
+    this.nextBackoffDelay_ = this.backoffDelay_ * 2;
+    return this.backoffDelay_;
+};
+
+/** @inheritDoc */
+ExponentialBackoffStrategy.prototype.reset_ = function() {
+    this.backoffDelay_ = 0;
+    this.nextBackoffDelay_ = this.getInitialDelay();
+};
+
+module.exports = ExponentialBackoffStrategy;
+
+
+});
+
+require.define("/node_modules/reconnect/widget.js",function(require,module,exports,__dirname,__filename,process,global){
+var h = require('h')
+
+module.exports = function (emitter) {
+  var style = {}
+  var el = h('a', {
+    href: '#', 
+    style: style, 
+    click: function () {
+      emitter.connected 
+        ? emitter.disconnect()
+        : emitter.reconnect()
+    }
+  })
+  var int
+  emitter.on('reconnect', function (n, d) {
+    var delay = Math.round(d / 1000) + 1
+    console.log(n, d)
+    el.innerText = 'reconnect in ' + delay
+    clearInterval(int)
+    int = setInterval(function () {
+      el.innerText = delay ? 'reconnect in ' + --delay : 'reconnecting...'
+    }, 1e3)
+  })
+  emitter.on('connect',   function () {
+    el.innerText = 'connected'
+    clearInterval(int)
+  })
+  return el
+}
+
+});
+
+require.define("/node_modules/reconnect/node_modules/h/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
+});
+
+require.define("/node_modules/reconnect/node_modules/h/index.js",function(require,module,exports,__dirname,__filename,process,global){;(function () {
+
+function h() {
+  var args = [].slice.call(arguments), e = null
+  function item (l) {
+    
+    function parseClass (string) {
+      var m = string.split(/([\.#]?[a-zA-Z0-9_-]+)/)
+      m.forEach(function (v) {
+        var s = v.substring(1,v.length)
+        if(!v) return 
+        if(!e)
+          e = document.createElement(v)
+        else if (v[0] === '.')
+          e.classList.add(s)
+        else if (v[0] === '#')
+          e.setAttribute('id', s)
+        
+      })
+    }
+
+    if(l == null)
+      ;
+    else if('string' === typeof l) {
+      if(!e)
+        parseClass(l)
+      else
+        e.appendChild(document.createTextNode(l))
+    }
+    else if('number' === typeof l 
+      || 'boolean' === typeof l
+      || l instanceof Date 
+      || l instanceof RegExp ) {
+        e.appendChild(document.createTextNode(l.toString()))
+    }
+    else if (Array.isArray(l))
+      l.forEach(item)
+    else if(l instanceof HTMLElement)
+      e.appendChild(l)
+    else if ('object' === typeof l) {
+      for (var k in l) {
+        if('function' === typeof l[k])
+          e.addEventListener(k, l[k])
+        else if(k === 'style') {
+          for (var s in l[k])
+            e.style.setProperty(s, l[k][s])
+        }
+        else
+          e.setAttribute(k, l[k])
+      }
+    }
+  }
+  while(args.length) {
+    item(args.shift())
+  }
+  return e
+}
+
+if(typeof module === 'object')
+  module.exports = h
+else
+  this.h = h
+})()
+
+});
+
 require.define("/index.js",function(require,module,exports,__dirname,__filename,process,global){var mapping = require("mapping-stream");
 var engine = require("engine.io-stream");
 var $ = require('jquery-browserify');
@@ -18145,8 +18685,22 @@ mdm.on('connection', function(_stream) {
   }
 });
 
-// Hook mux-demux into engine.io-stream
-stream.pipe(mdm).pipe(stream);
+
+// reconnect stuff
+var engine = require('engine.io-stream');
+var inject = require('reconnect/inject');
+
+var reconnect = inject(function() {
+  return engine.apply(null, arguments);
+});
+
+reconnect(function(stream) {
+  // Hook mux-demux into engine.io-stream
+  stream.pipe(mdm).pipe(stream);
+  stream.once('closed', console.log.bind(console, 'closed'));
+  stream.once('end', console.log.bind(console, 'end'));  
+  stream.on('connection', console.log.bind(console, 'connect'));
+}).connect('/invert');
 
 // Write some data to the tap stream
 setInterval(function() {

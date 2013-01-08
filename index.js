@@ -51,8 +51,22 @@ mdm.on('connection', function(_stream) {
   }
 });
 
-// Hook mux-demux into engine.io-stream
-stream.pipe(mdm).pipe(stream);
+
+// reconnect stuff
+var engine = require('engine.io-stream');
+var inject = require('reconnect/inject');
+
+var reconnect = inject(function() {
+  return engine.apply(null, arguments);
+});
+
+reconnect(function(stream) {
+  // Hook mux-demux into engine.io-stream
+  stream.pipe(mdm).pipe(stream);
+  stream.once('closed', console.log.bind(console, 'closed'));
+  stream.once('end', console.log.bind(console, 'end'));  
+  stream.on('connection', console.log.bind(console, 'connect'));
+}).connect('/invert');
 
 // Write some data to the tap stream
 setInterval(function() {
